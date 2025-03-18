@@ -1385,7 +1385,6 @@ static void rtl8365mb_port_bridge_leave(struct dsa_switch *ds, int port,
 		/* Remove this port from any other port on the bridge */
 		ret = regmap_update_bits(priv->map, RTL8365MB_PORT_ISOLATION_REG(i),
 					RTL8365MB_PORT_ISO_PORTS(BIT(port)), 0);
-		ret = -1; // TODO
 		if (ret)
 			dev_err(priv->dev, "failed to leave port %d\n", port);
 
