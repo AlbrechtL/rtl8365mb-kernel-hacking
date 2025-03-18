@@ -279,7 +279,8 @@
 #define RTL8365MB_PORT_ISOLATION_REG_BASE		0x08A2
 #define RTL8365MB_PORT_ISOLATION_REG(_physport) \
 		(RTL8365MB_PORT_ISOLATION_REG_BASE + (_physport))
-#define   RTL8365MB_PORT_ISOLATION_MASK			0x07FF
+#define RTL8365MB_PORT_ISOLATION_MASK			0x07FF
+#define RTL8365MB_PORT_ISO_PORTS(pmask)	((pmask) << 1)
 
 /* MSTP port state registers - indexed by tree instance */
 #define RTL8365MB_MSTI_CTRL_BASE			0x0A00
@@ -1328,6 +1329,74 @@ static int rtl8365mb_get_sset_count(struct dsa_switch *ds, int port, int sset)
 	return RTL8365MB_MIB_END;
 }
 
+static int rtl8365mb_port_bridge_join(struct dsa_switch *ds, int port,
+			   struct dsa_bridge bridge,
+			   bool *tx_fwd_offload,
+			   struct netlink_ext_ack *extack)
+{
+	struct realtek_priv *priv = ds->priv;
+	unsigned int port_bitmap = 0;
+	int ret, i;
+
+	dev_info(priv->dev, "--> rtl8365mb_port_bridge_join\n"); // TODO Just for testing
+	dev_info(priv->dev, "--> port %i, num_ports %i\n", port, priv->num_ports); // TODO Just for testing
+
+	/* Loop over all other ports than the current one */
+	for (i = 0; i < priv->num_ports; i++) {
+		/* Current port handled last */
+		if (i == port)
+			continue;
+		/* Not on this bridge */
+		if (!dsa_port_offloads_bridge(dsa_to_port(ds, i), &bridge))
+			continue;
+		/* Join this port to each other port on the bridge */
+		ret = regmap_update_bits(priv->map, RTL8365MB_PORT_ISOLATION_REG(i),
+					 RTL8365MB_PORT_ISO_PORTS(BIT(port)),
+					 RTL8365MB_PORT_ISO_PORTS(BIT(port)));
+		if (ret)
+			dev_err(priv->dev, "failed to join port %d\n", port);
+
+		port_bitmap |= BIT(i);
+	}
+
+	/* Set the bits for the ports we can access */
+	return regmap_update_bits(priv->map, RTL8365MB_PORT_ISOLATION_REG(port),
+				RTL8365MB_PORT_ISO_PORTS(port_bitmap),
+				RTL8365MB_PORT_ISO_PORTS(port_bitmap));
+}
+
+static void rtl8365mb_port_bridge_leave(struct dsa_switch *ds, int port,
+			    struct dsa_bridge bridge)
+{
+	struct realtek_priv *priv = ds->priv;
+	unsigned int port_bitmap = 0;
+	int ret, i;
+
+	dev_info(priv->dev, "--> rtl8365mb_port_bridge_leave\n"); // TODO Just for testing
+
+	/* Loop over all other ports than this one */
+	for (i = 0; i < priv->num_ports; i++) {
+		/* Current port handled last */
+		if (i == port)
+			continue;
+		/* Not on this bridge */
+		if (!dsa_port_offloads_bridge(dsa_to_port(ds, i), &bridge))
+			continue;
+		/* Remove this port from any other port on the bridge */
+		ret = regmap_update_bits(priv->map, RTL8365MB_PORT_ISOLATION_REG(i),
+					RTL8365MB_PORT_ISO_PORTS(BIT(port)), 0);
+		ret = -1; // TODO
+		if (ret)
+			dev_err(priv->dev, "failed to leave port %d\n", port);
+
+		port_bitmap |= BIT(i);
+	}
+
+	/* Clear the bits for the ports we can not access, leave ourselves */
+	regmap_update_bits(priv->map, RTL8365MB_PORT_ISOLATION_REG(port),
+			RTL8365MB_PORT_ISO_PORTS(port_bitmap), 0);
+}
+
 static void rtl8365mb_get_phy_stats(struct dsa_switch *ds, int port,
 				    struct ethtool_eth_phy_stats *phy_stats)
 {
@@ -2139,6 +2208,8 @@ static const struct dsa_switch_ops rtl8365mb_switch_ops_smi = {
 	.get_strings = rtl8365mb_get_strings,
 	.get_ethtool_stats = rtl8365mb_get_ethtool_stats,
 	.get_sset_count = rtl8365mb_get_sset_count,
+	.port_bridge_join = rtl8365mb_port_bridge_join,
+	.port_bridge_leave = rtl8365mb_port_bridge_leave,
 	.get_eth_phy_stats = rtl8365mb_get_phy_stats,
 	.get_eth_mac_stats = rtl8365mb_get_mac_stats,
 	.get_eth_ctrl_stats = rtl8365mb_get_ctrl_stats,
@@ -2162,6 +2233,8 @@ static const struct dsa_switch_ops rtl8365mb_switch_ops_mdio = {
 	.get_strings = rtl8365mb_get_strings,
 	.get_ethtool_stats = rtl8365mb_get_ethtool_stats,
 	.get_sset_count = rtl8365mb_get_sset_count,
+	.port_bridge_join = rtl8365mb_port_bridge_join,
+	.port_bridge_leave = rtl8365mb_port_bridge_leave,
 	.get_eth_phy_stats = rtl8365mb_get_phy_stats,
 	.get_eth_mac_stats = rtl8365mb_get_mac_stats,
 	.get_eth_ctrl_stats = rtl8365mb_get_ctrl_stats,
