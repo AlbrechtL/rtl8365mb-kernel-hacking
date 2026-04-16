@@ -20,4 +20,6 @@ sudo ip link delete dsabr0
 sudo ip link add name dsabr0 type bridge
 sudo ip link set dev lan1 master dsabr0
 sudo ip link set dev lan2 master dsabr0
+sudo ip link set dev lan3 master dsabr0
+sudo ip link set dev lan4 master dsabr0
 sudo ip link set dev dsabr0 up
